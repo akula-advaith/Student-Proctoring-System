@@ -292,6 +292,12 @@ export let mockMeetings: MockMeeting[] = [
         role: "student",
         response: "accepted",
       },
+      {
+        name: "Dr. Robert Brown",
+        email: "brown@campus.edu",
+        role: "faculty",
+        response: "pending", // Shows "No response" in past meetings
+      },
     ],
     status: "completed",
   },

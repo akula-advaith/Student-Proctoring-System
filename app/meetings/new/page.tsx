@@ -64,6 +64,24 @@ function NewMeetingContent() {
     setUnreadCount(getUnreadNotificationCount(currentUser.email));
   }, [currentUser]);
 
+  // Filter for open complaints only:
+  // - Only complaints with status "submitted" or "under_review" are eligible.
+  // - Resolved and Rejected complaints are excluded.
+  // - Faculty sees only open complaints assigned to them.
+  // - Admin sees all open complaints.
+  const openComplaints = React.useMemo(() => {
+    return complaints.filter((c) => {
+      const isOpen = c.status === "submitted" || c.status === "under_review";
+      if (!isOpen) return false;
+      if (role === "faculty") {
+        return c.assignedFaculty === currentUser.name;
+      }
+      return true; // Admin sees all open complaints
+    });
+  }, [complaints, role, currentUser.name]);
+
+  const hasNoOpenComplaints = openComplaints.length === 0;
+
   // 3. Form input states
   const [selectedComplaintRef, setSelectedComplaintRef] = React.useState("");
   const [title, setTitle] = React.useState("");
@@ -120,6 +138,34 @@ function NewMeetingContent() {
     if (!selectedComplaintRef.trim()) {
       setComplaintError("Please link this meeting to a complaint.");
       isValid = false;
+    } else {
+      // Second check on submit: Ensure the selected complaint is still open (Submitted or Under Review)
+      // NOTE: In production, the backend API / database trigger must repeat this validation check later to prevent race conditions.
+      const freshComplaints = getComplaints();
+      const linkedComplaint = freshComplaints.find(
+        (c) => c.refNumber === selectedComplaintRef
+      );
+
+      if (!linkedComplaint) {
+        setComplaintError("Selected complaint not found.");
+        isValid = false;
+      } else if (
+        linkedComplaint.status !== "submitted" &&
+        linkedComplaint.status !== "under_review"
+      ) {
+        setComplaintError(
+          "This complaint is no longer open. Meetings can only be scheduled for complaints that are Submitted or Under Review."
+        );
+        isValid = false;
+      } else if (
+        role === "faculty" &&
+        linkedComplaint.assignedFaculty !== currentUser.name
+      ) {
+        setComplaintError(
+          "You can only schedule meetings for complaints assigned to you."
+        );
+        isValid = false;
+      }
     }
 
     // Validate Title (at least 5 characters)
@@ -472,13 +518,32 @@ function NewMeetingContent() {
                   Schedule Hearing / Inquiry Session
                 </h2>
                 <p className="text-xs text-zinc-500">
-                  Organize an in-person or virtual hearing session to review a student grievance.
+                  Organize an in-person or virtual hearing session to review an active student grievance.
                 </p>
               </div>
 
+              {/* Friendly warning when no open complaints exist */}
+              {hasNoOpenComplaints && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-semibold text-zinc-900">
+                      No open complaints available for scheduling
+                    </div>
+                    <div className="text-zinc-600">
+                      Only grievances with status <strong>Submitted</strong> or <strong>Under Review</strong> can have inquiry meetings scheduled. Resolved and rejected complaints cannot be selected.
+                      {role === "faculty" && (
+                        <span> There are currently no open complaints assigned to you ({currentUser.name}).</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+                <fieldset disabled={hasNoOpenComplaints} className="space-y-4">
                 
-                {/* Linked Complaint Dropdown */}
+                {/* Linked Complaint Dropdown - Open complaints only */}
                 <div className="space-y-1">
                   <Label htmlFor="complaint-ref" className="text-xs font-medium text-zinc-700">
                     Linked Complaint <span className="text-red-500">*</span>
@@ -486,18 +551,23 @@ function NewMeetingContent() {
                   <select
                     id="complaint-ref"
                     value={selectedComplaintRef}
+                    disabled={hasNoOpenComplaints}
                     onChange={(e) => {
                       setSelectedComplaintRef(e.target.value);
                       if (complaintError) setComplaintError("");
                     }}
-                    className={`w-full h-9 rounded-lg border bg-white px-3 text-xs text-zinc-800 outline-none focus:ring-2 focus:ring-zinc-400 cursor-pointer ${
+                    className={`w-full h-9 rounded-lg border bg-white px-3 text-xs text-zinc-800 outline-none focus:ring-2 focus:ring-zinc-400 cursor-pointer disabled:bg-zinc-100 disabled:cursor-not-allowed ${
                       complaintError ? "border-red-500" : "border-input"
                     }`}
                   >
-                    <option value="">-- Select Linked Complaint --</option>
-                    {complaints.map((c) => (
+                    <option value="">
+                      {hasNoOpenComplaints
+                        ? "-- No open complaints available --"
+                        : "-- Select Linked Open Complaint --"}
+                    </option>
+                    {openComplaints.map((c) => (
                       <option key={c.id} value={c.refNumber}>
-                        {c.refNumber} - {c.subject} ({c.studentName})
+                        {c.refNumber} - {c.subject} ({c.studentName}) [{c.status === "submitted" ? "Submitted" : "Under Review"}]
                       </option>
                     ))}
                   </select>
@@ -670,13 +740,14 @@ function NewMeetingContent() {
                     If this hearing is virtual or hybrid, paste a link starting with https://.
                   </p>
                 </div>
+                </fieldset>
 
                 {/* Form Buttons */}
                 <div className="pt-3 flex items-center gap-3">
                   <Button
                     type="submit"
-                    disabled={isSubmitting}
-                    className="bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium px-6 py-2 rounded-xl"
+                    disabled={isSubmitting || hasNoOpenComplaints}
+                    className="bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium px-6 py-2 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? "Scheduling Meeting..." : "Schedule Meeting"}
                   </Button>

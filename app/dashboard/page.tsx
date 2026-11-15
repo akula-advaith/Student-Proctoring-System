@@ -11,6 +11,7 @@ import {
   MockUser,
   MockComplaint,
 } from "@/lib/mock-data";
+import { getMeetingStatus } from "@/lib/utils";
 import {
   ShieldCheck,
   LayoutDashboard,
@@ -60,14 +61,12 @@ function DashboardContent() {
     const user = mockUsers.find((u) => u.role === role) || mockUsers[0];
     setUnreadCount(getUnreadNotificationCount(user.email));
 
-    // Dynamic upcoming meetings count from shared getMeetings()
+    // Dynamic upcoming & live meetings count from shared getMeetings()
     const meetings = getMeetings();
-    const TODAY = "2026-11-15";
     const upcomingForFaculty = meetings.filter(
       (m) =>
         (m.organizerEmail === user.email || m.participants.some((p) => p.email === user.email)) &&
-        m.status === "scheduled" &&
-        m.date >= TODAY
+        getMeetingStatus(m.date, m.startTime, m.endTime, m.status) !== "past"
     ).length;
     setFacultyUpcomingMeetingsCount(upcomingForFaculty);
   };
